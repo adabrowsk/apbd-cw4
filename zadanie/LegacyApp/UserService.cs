@@ -4,61 +4,31 @@ namespace LegacyApp
 {
     public class UserService
     {
+        public Client client;
         public bool AddUser(string firstName, string lastName, string email, DateTime dateOfBirth, int clientId)
         {
-            if (string.IsNullOrEmpty(firstName) || string.IsNullOrEmpty(lastName))
-            {
-                return false;
-            }
-
-            if (!email.Contains("@") && !email.Contains("."))
-            {
-                return false;
-            }
-
-            var now = DateTime.Now;
-            int age = now.Year - dateOfBirth.Year;
-            if (now.Month < dateOfBirth.Month || (now.Month == dateOfBirth.Month && now.Day < dateOfBirth.Day)) age--;
-
-            if (age < 21)
+            if (!IsValidName(firstName, lastName) || !IsValidEmail(email) || !IsAgeAtLeast21(dateOfBirth))
             {
                 return false;
             }
 
             var clientRepository = new ClientRepository();
-            var client = clientRepository.GetById(clientId);
+            this.client = clientRepository.GetById(clientId);
 
+            if (this.client == null)
+            {
+                throw new ArgumentException($"Client with ID {clientId} does not exist.");
+            }
             var user = new User
             {
-                Client = client,
-                DateOfBirth = dateOfBirth,
-                EmailAddress = email,
                 FirstName = firstName,
-                LastName = lastName
+                LastName = lastName,
+                EmailAddress = email,
+                DateOfBirth = dateOfBirth,
+                Client = this.client
             };
 
-            if (client.Type == "VeryImportantClient")
-            {
-                user.HasCreditLimit = false;
-            }
-            else if (client.Type == "ImportantClient")
-            {
-                using (var userCreditService = new UserCreditService())
-                {
-                    int creditLimit = userCreditService.GetCreditLimit(user.LastName, user.DateOfBirth);
-                    creditLimit = creditLimit * 2;
-                    user.CreditLimit = creditLimit;
-                }
-            }
-            else
-            {
-                user.HasCreditLimit = true;
-                using (var userCreditService = new UserCreditService())
-                {
-                    int creditLimit = userCreditService.GetCreditLimit(user.LastName, user.DateOfBirth);
-                    user.CreditLimit = creditLimit;
-                }
-            }
+            SetCreditLimit(user, this.client.Type);
 
             if (user.HasCreditLimit && user.CreditLimit < 500)
             {
@@ -67,6 +37,48 @@ namespace LegacyApp
 
             UserDataAccess.AddUser(user);
             return true;
+        }
+
+        private bool IsValidName(string firstName, string lastName)
+        {
+            return !string.IsNullOrEmpty(firstName) && !string.IsNullOrEmpty(lastName);
+        }
+
+        private bool IsValidEmail(string email)
+        {
+            return email.Contains("@") && email.Contains(".");
+        }
+
+        private bool IsAgeAtLeast21(DateTime dateOfBirth)
+        {
+            var now = DateTime.Now;
+            int age = now.Year - dateOfBirth.Year;
+            if (now.Month < dateOfBirth.Month || (now.Month == dateOfBirth.Month && now.Day < dateOfBirth.Day))
+            {
+                age--;
+            }
+            return age >= 21;
+        }
+
+        private void SetCreditLimit(User user, string clientType)
+        {
+            if (clientType == "VeryImportantClient")
+            {
+                user.HasCreditLimit = false;
+            }
+            else
+            {
+                using (var userCreditService = new UserCreditService())
+                {
+                    int creditLimit = userCreditService.GetCreditLimit(user.LastName, user.DateOfBirth);
+                    if (clientType == "ImportantClient")
+                    {
+                        creditLimit *= 2;
+                    }
+                    user.CreditLimit = creditLimit;
+                }
+                user.HasCreditLimit = true;
+            }
         }
     }
 }
